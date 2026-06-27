@@ -66,8 +66,8 @@
     <h1>Visual Place Recognition</h1>
     <p class="lede">Show the system a photo and it answers a deceptively hard question: <i>where was this taken?</i> Not from GPS — from the pixels alone, by matching the image against a database of places it has seen before. I rebuilt it from scratch because it's the relocalisation trick that lets a robot or a phone know where it is when the satellite signal is gone.</p>
     <div class="meta">
-      <span class="chip">Python</span><span class="chip">Image retrieval</span><span class="chip">Global descriptors</span>
-      <span class="chip">Feature matching</span><span class="chip">CNN embeddings</span><span class="chip">Geo-localisation</span>
+      <span class="chip">Python</span><span class="chip">OpenCV</span><span class="chip">Image retrieval</span>
+      <span class="chip">Color + HOG</span><span class="chip">Bag of Visual Words</span><span class="chip">Exact NN search</span>
     </div>
   </div>
 </header>
@@ -89,14 +89,14 @@
   <div class="wrap">
     <p class="kicker">The stack</p>
     <h2>From pixels to a place ID</h2>
-    <p class="muted">Two ideas do the heavy lifting: a strong descriptor, and a fast search over it.</p>
+    <p class="muted">Two ideas do the heavy lifting: a classical descriptor, and an exact search over it. Built with OpenCV + NumPy + scikit-learn — no deep nets, no FAISS.</p>
     <div class="grid">
-      <div class="tool"><div class="t">backbone</div><h3>CNN feature extractor</h3><p>A convolutional network turns each image into a dense feature map that captures structure, not just colour.</p></div>
-      <div class="tool"><div class="t">descriptor</div><h3>Global embedding</h3><p>Pool those features into one compact vector per image — the place's fingerprint, robust to clutter and light.</p></div>
-      <div class="tool"><div class="t">index</div><h3>Nearest-neighbour search</h3><p>Store every reference fingerprint and find the closest matches to a query fast, even over large databases.</p></div>
-      <div class="tool"><div class="t">verify</div><h3>Geometric check</h3><p>Re-rank the top candidates by matching local keypoints, confirming the match is geometrically consistent.</p></div>
-      <div class="tool"><div class="t">data</div><h3>Reference gallery</h3><p>A curated set of labelled place images — the memory the system searches against.</p></div>
-      <div class="tool"><div class="t">metric</div><h3>Recall@K</h3><p>The honest score: how often the true place lands in the top-K retrieved results.</p></div>
+      <div class="tool"><div class="t">descriptor</div><h3>Colour + HOG</h3><p>An HSV colour histogram concatenated with a Histogram of Oriented Gradients — one L2-normalised vector per image capturing colour and coarse layout.</p></div>
+      <div class="tool"><div class="t">descriptor</div><h3>Bag of Visual Words</h3><p>ORB keypoints quantised against a KMeans vocabulary, encoded as a word-occurrence histogram — a structure-focused fingerprint.</p></div>
+      <div class="tool"><div class="t">index</div><h3>Exact nearest-neighbour</h3><p>Every database fingerprint scored against the query by cosine / L2 distance (scikit-learn). Exact rankings for this size; FAISS would scale it.</p></div>
+      <div class="tool"><div class="t">data</div><h3>Controlled benchmark</h3><p>Distinct synthetic place scenes, split into database and query views by photometric and geometric augmentation — known ground truth.</p></div>
+      <div class="tool"><div class="t">metric</div><h3>Recall@K</h3><p>The honest score: how often the true place lands in the top-K retrieved results, measured against a random-retrieval baseline.</p></div>
+      <div class="tool"><div class="t">result</div><h3>0.944 → 1.000</h3><p>Real Recall@1 of 0.944 (colour+HOG) and 1.000 (BoVW) vs a 0.086 random baseline on a 12-place benchmark.</p></div>
     </div>
   </div>
 </section>
@@ -105,13 +105,12 @@
   <div class="wrap">
     <p class="kicker">Architecture</p>
     <h2>How a place is recognised</h2>
-    <p>Every query runs the same retrieve-then-verify pipeline:</p>
+    <p>Every query runs the same describe-then-retrieve pipeline:</p>
     <ol class="flow">
-      <li><h3>Build the gallery</h3><p>Fingerprint every reference image once and store the vectors in a searchable index.</p></li>
-      <li><h3>Fingerprint the query</h3><p>Run the new photo through the same network to get its global descriptor.</p></li>
-      <li><h3>Retrieve</h3><p>Find the nearest descriptors in the gallery — the candidate places.</p></li>
-      <li><h3>Verify</h3><p>Match local keypoints between query and candidates to reject false positives.</p></li>
-      <li><h3>Answer</h3><p>Return the best-verified match as the recognised place.</p></li>
+      <li><h3>Build the database</h3><p>Fingerprint every reference image once with the colour+HOG (or BoVW) descriptor and store the vectors in an exact NN index.</p></li>
+      <li><h3>Fingerprint the query</h3><p>Run the new photo through the same descriptor to get its global vector.</p></li>
+      <li><h3>Retrieve</h3><p>Score the query against every database vector by cosine / L2 distance and rank the closest — the candidate places.</p></li>
+      <li><h3>Answer</h3><p>Return the top match as the recognised place; report Recall@K over all queries.</p></li>
     </ol>
   </div>
 </section>
@@ -123,9 +122,9 @@
     <ul class="learn">
       <li><b>Recognition is retrieval.</b> Reframing "what place is this" as "find the nearest fingerprint" is the whole conceptual move.</li>
       <li><b>The descriptor is everything.</b> A representation that survives lighting, season and viewpoint changes is the difference between working and useless.</li>
-      <li><b>Global finds, local confirms.</b> A cheap global vector narrows the field; an expensive geometric check makes the answer trustworthy.</li>
-      <li><b>Appearance change is the real enemy.</b> The same street at dawn and dusk are nearly different worlds to a naive pixel comparison.</li>
-      <li><b>Recall@K keeps you honest.</b> A single "it matched!" demo means nothing; measuring top-K recall across a dataset does.</li>
+      <li><b>Classical goes a long way.</b> Colour + HOG and a Bag of Visual Words already separate distinct places cleanly under mild appearance change — no deep net required to learn the core idea.</li>
+      <li><b>Controlled means honest.</b> The strong Recall@K here comes from a controlled benchmark; a real deployment with season and lighting change is much harder, and that gap is the point.</li>
+      <li><b>Recall@K keeps you honest.</b> A single "it matched!" demo means nothing; measuring top-K recall across a dataset against a random baseline does.</li>
     </ul>
   </div>
 </section>
@@ -134,7 +133,7 @@
   <div class="wrap">
     <div class="credit">
       <div class="k">About this build</div>
-      <p style="margin:0">An original, from-scratch build by <b>Andrea</b> — written to learn visual place recognition end to end: CNN embeddings, global descriptors, nearest-neighbour retrieval and geometric verification. Plain HTML/CSS, deployed on GitHub Pages.</p>
+      <p style="margin:0">An original, from-scratch build by <b>Andrea</b> — written to learn visual place recognition end to end: classical global descriptors (colour + HOG, Bag of Visual Words over ORB), exact nearest-neighbour retrieval and Recall@K evaluation, all in OpenCV + NumPy + scikit-learn. The page is plain HTML/CSS on GitHub Pages; the code lives in this repo.</p>
     </div>
     <p class="fine">Built from scratch by Andrea · one of an ongoing series of learning builds.</p>
   </div>
